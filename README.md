@@ -1,94 +1,88 @@
 # BatchCrop (v1.0.0)
 
-> **Tauri v2 + Rust + React + TypeScript + Vite + Tailwind CSS** で構築された、高速バッチ画像クロップ ＆ マルチアスペクト一括エクスポート デスクトップアプリケーション。
-
----
+Tauri v2 + Rust + React + TypeScript + Vite + Tailwind CSS で構築された、高速バッチ画像クロップ ＆ マルチアスペクト一括エクスポート デスクトップアプリケーション。
 
 ## 主な特徴 (Key Features)
 
-- **超高速マルチスレッド一括エクスポート**: Rust の `rayon` 並列処理を活用し、大量の画像クロップ＆フォーマット変換をマルチコア CPU で一括高速出力。
-- **ドラッグ ＆ ドロップ対応**: 画像ファイル（PNG, JPEG, WebP, JFIF, BMP 等）をアプリ画面やサイドバーに直感的にドラッグ＆ドロップして一括登録。
-- **EXIF 回転情報の自動判定・補正**: マジックバイト判定と EXIF メタデータに基づき、撮影時の縦横向きを全自動補正。
-- **マルチアスペクト比プリセット**:
+- 超高速マルチスレッド一括エクスポート: Rust の `rayon` 並列処理を活用し、大量の画像クロップ＆フォーマット変換をマルチコア CPU で一括高速出力。
+- ドラッグ ＆ ドロップ対応: 画像ファイル（PNG, JPEG, WebP, JFIF, BMP 等）をアプリ画面やサイドバーに直感的にドラッグ＆ドロップして一括登録。
+- EXIF 回転情報の自動判定・補正: マジックバイト判定と EXIF メタデータに基づき、撮影時の縦横向きを全自動補正。
+- マルチアスペクト比プリセット:
   - `Free` (フリーハンド)
   - `16:9` / `4:3` / `1:1` / `3:4` / `9:16`
   - ショートカットキー (`0` 〜 `5`) によるワンタッチ切替。
-- **構図固定枠によるズーム ＆ パン**:
-  - **マウスホイール**: 画面上のクロップ枠を固定したまま、内部の画像をスムーズに拡大・縮小。
-  - **枠内ドラッグ**: 枠の範囲外に画像がはみ出さないよう自動境界クランプ（Clamp）しながら自由パン移動。
-  - **縦長（Portrait）画像対応**: 画像が縦に伸ばされる表示歪み（Distortion）を完全に排除。
-- **枠サイズのピクセル数値直接入力 ＆ 自動引き継ぎ**:
+- 構図固定枠によるズーム ＆ パン:
+  - マウスホイール: 画面上のクロップ枠を固定したまま、内部の画像をスムーズに拡大・縮小。
+  - 枠内ドラッグ: 枠の範囲外に画像がはみ出さないよう自動境界クランプ（Clamp）しながら自由パン移動。
+  - 縦長（Portrait）画像対応: 画像が縦に伸ばされる表示歪み（Distortion）を完全に排除。
+- 枠サイズのピクセル数値直接入力 ＆ 自動引き継ぎ:
   - メイン画面左下のコントロールから `幅 × 高さ (px)` を直接数値入力・リアルタイム連動。
   - 調整した枠サイズを保持し、次の画像へ自動引き継ぎ（同一アスペクト比での連続クロップ作業を大幅に効率化）。
-- **重複防止の自動連番機能**:
+- 重複防止の自動連番機能:
   - `Downloads` フォルダへの自動保存時、同名の出力先ディレクトリや `.zip` アーカイブが既に存在する場合、自動的に `(1)`, `(2)` 形式の連番を末尾に付与（既存データの上書きを防止）。
-- **多彩な出力フォーマット ＆ パッケージング**:
+- 多彩な出力フォーマット ＆ パッケージング:
   - 元画像の形式を維持（ロスレス・推奨）
   - PNG（完全無劣化）
   - WebP（ロスレス / 非可逆・高圧縮）
   - JPEG（品質 1-100 指定）
   - ZIP アーカイブとして一括パッケージング保存
-- **コンパクト ＆ レスポンシブ UI**:
+- コンパクト ＆ レスポンシブ UI:
   - ウィンドウ最小サイズ `480 × 360`px。
   - `Ctrl + B`（Mac: `Cmd + B`）によるサイドバー開閉（作業キャンバスの最大化）。
   - ウィンドウ幅縮小時にアスペクト比選択がドロップダウン (`<select>`) 化、一括出力ボタンがコンパクトなアイコンボタン化。
-
----
 
 ## ショートカットキー一覧 (Keyboard Shortcuts)
 
 | ショートカット | 機能 |
 | :--- | :--- |
-| **`Space`** / **`Enter`** / **`↓`** | 現在のクロップを確定して次の画像へ移動 |
-| **`↑`** | 前の画像へ移動 |
-| **`Shift + Space`** / **`D`** | 現在の画像をタスクキューの直後に複製 (Duplicate) |
-| **`Ctrl + B`** (Mac: **`Cmd + B`**) | サイドバーの表示 / 非表示トグル |
-| **`0`** | フリー選択 (`Free`) モード |
-| **`1`** 〜 **`5`** | アスペクト比切り替え (`16:9`, `4:3`, `1:1`, `3:4`, `9:16`) |
-| **`G`** | 三分割法（Rule of Thirds）ガイド線の表示トグル |
-| **`B`** | キャンバス背景色の切替 (Dark ➔ Light ➔ Checkerboard) |
-| **枠内ダブルクリック** | クロップ範囲の確定 / 再定義 ＆ 次の画像へ移動 |
-
----
+| `Space` / `Enter` / `↓` | 現在のクロップを確定して次の画像へ移動 |
+| `↑` | 前の画像へ移動 |
+| `Shift + Space` / `D` | 現在の画像をタスクキューの直後に複製 (Duplicate) |
+| `Ctrl + B` (Mac: `Cmd + B`) | サイドバーの表示 / 非表示トグル |
+| `0` | フリー選択 (`Free`) モード |
+| `1` 〜 `5` | アスペクト比切り替え (`16:9`, `4:3`, `1:1`, `3:4`, `9:16`) |
+| `G` | 三分割法（Rule of Thirds）ガイド線の表示トグル |
+| `B` | キャンバス背景色の切替 (Dark ➔ Light ➔ Checkerboard) |
+| 枠内ダブルクリック | クロップ範囲の確定 / 再定義 ＆ 次の画像へ移動 |
 
 ## 技術スタック (Tech Stack)
 
-- **Desktop Core**: [Tauri v2](https://tauri.app/)
-- **Backend**: Rust (`image`, `rayon`, `zip`, `dirs`, `serde`, `tokio`)
-- **Frontend**: React 19, TypeScript, Vite 7
-- **Styling**: Tailwind CSS v4, Lucide React Icons
-- **State Management**: Zustand
-
----
+- Desktop Core: [Tauri v2](https://tauri.app/)
+- Backend: Rust (`image`, `rayon`, `zip`, `dirs`, `serde`, `tokio`)
+- Frontend: React 19, TypeScript, Vite 7
+- Styling: Tailwind CSS v4, Lucide React Icons
+- State Management: Zustand
 
 ## 開発・ビルド手順 (Development & Build)
 
 ### 必須要件 (Prerequisites)
+
 - [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
 - [Rust toolchain](https://www.rust-lang.org/)
+- *(パッケージマネージャーは `npm` / `pnpm` / `yarn` / `bun` のいずれも利用可能です)*
 
 ### 開発用サーバー起動
+
 ```bash
-# 依存関係のインストール
-pnpm install
+# 依存関係のインストール (npm または pnpm)
+npm install   # または pnpm install
 
 # Tauri 開発用サーバーの起動
-pnpm tauri dev
+npm run tauri dev   # または pnpm tauri dev
 ```
 
 ### プロダクションビルド
+
 ```bash
 # フロントエンド ＆ Rust バックエンドの完全コンパイル
-pnpm tauri build
+npm run tauri build   # または pnpm tauri build
 ```
 
 ### バックエンド単体テストの実行
+
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
-
----
 
 ## ライセンス (License)
 
