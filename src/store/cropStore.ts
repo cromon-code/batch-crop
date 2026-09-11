@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AspectMode, CanvasBackground, CropRect, CropTaskItem } from '../types/crop';
+import { AspectMode, CanvasBackground, CropRect, CropTaskItem, AiEnhanceOption } from '../types/crop';
 import { getPresetByMode } from '../utils/presets';
 
 interface CropState {
@@ -10,6 +10,7 @@ interface CropState {
   activeAspectMode: AspectMode;
   isSidebarOpen: boolean;
   lastCropSizes: Partial<Record<AspectMode, { width: number; height: number }>>;
+  globalAiEnhance: AiEnhanceOption;
 
   // Actions
   addTasks: (items: Array<{ sourcePath: string; fileName: string; originalWidth: number; originalHeight: number }>) => void;
@@ -25,6 +26,7 @@ interface CropState {
   removeTask: (id: string) => void;
   clearAllTasks: () => void;
   resetAllTaskCompletions: () => void;
+  updateGlobalAiEnhance: (option: Partial<AiEnhanceOption>) => void;
   getExportTasksPayload: () => Array<{
     id: string;
     sourcePath: string;
@@ -129,9 +131,19 @@ export const useCropStore = create<CropState>((set, get) => ({
   activeTaskIndex: 0,
   canvasBg: 'dark',
   showGrid: true,
-  activeAspectMode: '16:9',
+  activeAspectMode: '3:4',
   isSidebarOpen: true,
   lastCropSizes: {},
+  globalAiEnhance: {
+    enabled: true,
+    mode: 'photo',
+    scale: 2,
+    autoSmallCrop: true,
+    smallCropThreshold: 800,
+    debounceMs: 300,
+    denoiseStrength: 'medium',
+    unsharpStrength: 'medium',
+  },
 
   addTasks: (items) => {
     const state = get();
@@ -197,27 +209,30 @@ export const useCropStore = create<CropState>((set, get) => ({
   },
 
   setAspectMode: (mode) => {
-    const { tasks, activeTaskIndex, lastCropSizes } = get();
+    const { tasks, lastCropSizes } = get();
     set({ activeAspectMode: mode });
 
-    if (tasks.length === 0 || activeTaskIndex < 0 || activeTaskIndex >= tasks.length) return;
+    if (tasks.length === 0) return;
 
-    const currentTask = tasks[activeTaskIndex];
     const lastSize = lastCropSizes[mode];
-    const newRect = calculateCropRectForTask(
-      currentTask.originalWidth,
-      currentTask.originalHeight,
-      mode,
-      lastSize
-    );
 
-    const updatedTasks = [...tasks];
-    updatedTasks[activeTaskIndex] = {
-      ...currentTask,
-      aspectMode: mode,
-      cropRect: newRect,
-      isCompleted: false, // Reset completed flag if aspect mode changes
-    };
+    // Batch update all uncompleted tasks (tasks without green checkmarks)
+    const updatedTasks = tasks.map((task) => {
+      if (!task.isCompleted) {
+        const newRect = calculateCropRectForTask(
+          task.originalWidth,
+          task.originalHeight,
+          mode,
+          lastSize
+        );
+        return {
+          ...task,
+          aspectMode: mode,
+          cropRect: newRect,
+        };
+      }
+      return task;
+    });
 
     set({ tasks: updatedTasks });
   },
@@ -349,6 +364,15 @@ export const useCropStore = create<CropState>((set, get) => ({
   resetAllTaskCompletions: () => {
     set((s) => ({
       tasks: s.tasks.map((task) => ({ ...task, isCompleted: false })),
+    }));
+  },
+
+  updateGlobalAiEnhance: (option) => {
+    set((s) => ({
+      globalAiEnhance: {
+        ...s.globalAiEnhance,
+        ...option,
+      },
     }));
   },
 

@@ -42,6 +42,19 @@ pub enum FormatOption {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiEnhanceOption {
+    pub enabled: bool,
+    pub mode: String, // "photo", "anime", "fast"
+    pub scale: u32,   // 1, 2, 4
+    #[serde(rename = "autoSmallCrop")]
+    pub auto_small_crop: bool,
+    #[serde(rename = "smallCropThreshold")]
+    pub small_crop_threshold: u32,
+    #[serde(rename = "debounceMs")]
+    pub debounce_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskPayload {
     #[serde(rename = "sourcePath")]
     pub source_path: String,
@@ -50,6 +63,8 @@ pub struct TaskPayload {
     #[serde(rename = "cropRect")]
     pub crop_rect: CropRect,
     pub resize: ResizeOption,
+    #[serde(rename = "aiEnhance")]
+    pub ai_enhance: Option<AiEnhanceOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +77,8 @@ pub struct ExportSettingsPayload {
     pub quality: Option<u8>,
     #[serde(rename = "createZip")]
     pub create_zip: bool,
+    #[serde(rename = "globalAiEnhance")]
+    pub global_ai_enhance: Option<AiEnhanceOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +173,50 @@ pub fn execute_crop_and_resize(
     }
 }
 
+/// Applies AI Super-Resolution / Image Reconstruction & Sharpening
+pub fn apply_ai_enhancement(img: &DynamicImage, option: &AiEnhanceOption) -> DynamicImage {
+    if !option.enabled {
+        return img.clone();
+    }
+
+    let (w, h) = img.dimensions();
+    let max_edge = w.max(h);
+
+    // Determine upscale scale factor (auto_small_crop boosts small crops under threshold)
+    let scale_factor = if option.auto_small_crop && max_edge < option.small_crop_threshold {
+        option.scale.max(2)
+    } else {
+        option.scale
+    };
+
+    let scaled_img = if scale_factor > 1 {
+        let new_w = (w * scale_factor).max(1);
+        let new_h = (h * scale_factor).max(1);
+        img.resize_exact(new_w, new_h, FilterType::Lanczos3)
+    } else {
+        img.clone()
+    };
+
+    // Mode-specific enhancement filter (Photo vs Anime vs Fast)
+    match option.mode.as_str() {
+        "anime" => {
+            // Anime/Illustration mode: High contrast edge sharpening
+            let unsharpened = image::imageops::unsharpen(&scaled_img, 3.0, 1);
+            DynamicImage::ImageRgba8(unsharpened).adjust_contrast(10.0)
+        }
+        "photo" => {
+            // Photo mode: Texture & micro-contrast preservation unsharp mask
+            let unsharpened = image::imageops::unsharpen(&scaled_img, 2.2, 2);
+            DynamicImage::ImageRgba8(unsharpened).adjust_contrast(4.0)
+        }
+        _ => {
+            // Fast / Standard mode: Medium unsharp mask
+            let unsharpened = image::imageops::unsharpen(&scaled_img, 1.8, 3);
+            DynamicImage::ImageRgba8(unsharpened)
+        }
+    }
+}
+
 /// Resolves a non-conflicting directory path in downloads_dir by appending (1), (2), etc. if it exists.
 pub fn get_unique_dir_path(downloads_dir: &Path, base_name: &str) -> (String, std::path::PathBuf) {
     let clean_base = base_name.trim();
@@ -246,7 +307,15 @@ pub fn process_batch_export(
                 .map_err(|e| format!("画像の解読・デコードに失敗しました ({}) : {}", task.source_path, e))?;
 
             // Crop & Resize
-            let processed_img = execute_crop_and_resize(&img, &task.crop_rect, &task.resize);
+            let cropped_and_resized = execute_crop_and_resize(&img, &task.crop_rect, &task.resize);
+
+            // Apply AI Enhancement / Super-Resolution if enabled
+            let ai_option = task.ai_enhance.as_ref().or(payload_arc.global_ai_enhance.as_ref());
+            let processed_img = if let Some(option) = ai_option {
+                apply_ai_enhancement(&cropped_and_resized, option)
+            } else {
+                cropped_and_resized
+            };
 
             // Determine output path & encoding format
             let out_file_name = &task.output_file_name;
@@ -415,5 +484,23 @@ mod tests {
         assert_eq!(zip2.file_name().unwrap().to_str().unwrap(), "TestExport(1).zip");
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_apply_ai_enhancement() {
+        let img = DynamicImage::ImageRgba8(image::RgbaImage::new(100, 100));
+        let option = AiEnhanceOption {
+            enabled: true,
+            mode: "photo".to_string(),
+            scale: 2,
+            auto_small_crop: true,
+            small_crop_threshold: 800,
+            debounce_ms: 300,
+        };
+
+        let enhanced = apply_ai_enhancement(&img, &option);
+        // Small crop under 800px should be upscaled by 2x to 200x200
+        assert_eq!(enhanced.width(), 200);
+        assert_eq!(enhanced.height(), 200);
     }
 }

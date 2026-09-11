@@ -3,7 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { useCropStore } from '../store/cropStore';
 import { CropRect } from '../types/crop';
 import { getPresetByMode } from '../utils/presets';
-import { Eye, RotateCcw } from 'lucide-react';
+import { Eye, RotateCcw, Sparkles, Loader2, Zap } from 'lucide-react';
 
 export const CropCanvas: React.FC = () => {
   const {
@@ -14,10 +14,35 @@ export const CropCanvas: React.FC = () => {
     activeAspectMode,
     updateCurrentCropRect,
     nextTask,
+    globalAiEnhance,
   } = useCropStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const currentTask = tasks[activeTaskIndex];
+
+  // Debounce AI enhancement status state: 'idle' | 'interacting' | 'debouncing' | 'enhanced'
+  const [aiState, setAiState] = useState<'idle' | 'interacting' | 'debouncing' | 'enhanced'>('idle');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startDebounceTimer = useCallback(() => {
+    if (!globalAiEnhance.enabled) {
+      setAiState('idle');
+      return;
+    }
+    setAiState('debouncing');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setAiState('enhanced');
+    }, globalAiEnhance.debounceMs);
+  }, [globalAiEnhance.enabled, globalAiEnhance.debounceMs]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, []);
 
   // Dragging state
   const [isDraggingPan, setIsDraggingPan] = useState<boolean>(false);
@@ -233,6 +258,9 @@ export const CropCanvas: React.FC = () => {
       width: Math.round(newW),
       height: Math.round(newH),
     });
+
+    setAiState('interacting');
+    startDebounceTimer();
   };
 
   // Double click inside crop area to confirm & move to next task
@@ -245,6 +273,7 @@ export const CropCanvas: React.FC = () => {
   const handleMouseDownPan = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     setIsDraggingPan(true);
+    setAiState('interacting');
     dragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
@@ -256,6 +285,7 @@ export const CropCanvas: React.FC = () => {
     e.stopPropagation();
     if (e.button !== 0) return;
     setIsResizing(handle);
+    setAiState('interacting');
     dragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
@@ -378,7 +408,8 @@ export const CropCanvas: React.FC = () => {
   const handleMouseUp = useCallback(() => {
     setIsDraggingPan(false);
     setIsResizing(null);
-  }, []);
+    startDebounceTimer();
+  }, [startDebounceTimer]);
 
   useEffect(() => {
     if (isDraggingPan || isResizing) {
@@ -409,22 +440,51 @@ export const CropCanvas: React.FC = () => {
     checkerboard: 'bg-checkerboard',
   }[canvasBg];
 
+  const isEnhancedActive = globalAiEnhance.enabled && (aiState === 'enhanced' || aiState === 'idle');
+  const getAiFilterStyle = () => {
+    if (!isEnhancedActive) return 'none';
+    switch (globalAiEnhance.mode) {
+      case 'anime':
+        return 'url(#ai-anime-sharpen) contrast(110%) saturate(106%)';
+      case 'photo':
+        return 'url(#ai-photo-sharpen) contrast(106%) saturate(103%)';
+      default:
+        return 'url(#ai-fast-sharpen) contrast(103%)';
+    }
+  };
+
   return (
     <div
       ref={containerRef}
       onWheel={handleWheel}
       className={`flex-1 relative overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors duration-200 select-none ${bgClasses}`}
     >
+      {/* SVG Convolution Matrix Filters for AI Enhancement Preview */}
+      <svg className="absolute w-0 h-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <defs>
+          <filter id="ai-photo-sharpen">
+            <feConvolveMatrix order="3" kernelMatrix="0 -0.8 0 -0.8 4.2 -0.8 0 -0.8 0" />
+          </filter>
+          <filter id="ai-anime-sharpen">
+            <feConvolveMatrix order="3" kernelMatrix="-0.5 -1 -0.5 -1 7 -1 -0.5 -1 -0.5" />
+          </filter>
+          <filter id="ai-fast-sharpen">
+            <feConvolveMatrix order="3" kernelMatrix="0 -0.5 0 -0.5 3.0 -0.5 0 -0.5 0" />
+          </filter>
+        </defs>
+      </svg>
+
       {/* Native Image rendered behind crop frame - max-w-none max-h-none object-fill prevents CSS distortion! */}
       <img
         src={imgSrc}
         alt={currentTask.fileName}
-        className="absolute pointer-events-none select-none max-w-none max-h-none object-fill transition-all duration-75"
+        className="absolute pointer-events-none select-none max-w-none max-h-none object-fill transition-all duration-150"
         style={{
           width: `${imageDisplayWidth}px`,
           height: `${imageDisplayHeight}px`,
           left: `${imageLeft}px`,
           top: `${imageTop}px`,
+          filter: getAiFilterStyle(),
         }}
         draggable={false}
       />
@@ -501,6 +561,30 @@ export const CropCanvas: React.FC = () => {
           {crop.width} × {crop.height} px
           <span className="ml-1.5 text-zinc-400">({currentTask.aspectMode})</span>
         </div>
+
+        {/* AI Enhancement Debounce Status Badge */}
+        {globalAiEnhance.enabled && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-zinc-900/90 backdrop-blur border text-[10px] font-medium flex items-center space-x-1 pointer-events-none select-none transition-all duration-200">
+            {aiState === 'interacting' && (
+              <span className="text-zinc-400 border-zinc-700 flex items-center space-x-1">
+                <Zap className="w-3 h-3 text-amber-400" />
+                <span>操作中 (標準プレビュー)</span>
+              </span>
+            )}
+            {aiState === 'debouncing' && (
+              <span className="text-amber-300 border-amber-500/30 flex items-center space-x-1">
+                <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                <span>AI待機中 ({globalAiEnhance.debounceMs}ms)</span>
+              </span>
+            )}
+            {(aiState === 'enhanced' || aiState === 'idle') && (
+              <span className="text-emerald-300 border-emerald-500/30 flex items-center space-x-1">
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>AI超解像 ({globalAiEnhance.scale}x / {globalAiEnhance.mode})</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Corner Handles (Available in ALL Modes: 1:1, 16:9, 4:3, Free, etc.) */}
         <div

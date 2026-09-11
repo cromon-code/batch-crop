@@ -1,4 +1,19 @@
-export type AspectMode = 'free' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
+export type AspectMode = '3:4' | '9:16' | '1:1' | '4:3' | '16:9' | 'free';
+
+export type AiEnhanceMode = 'photo' | 'anime' | 'fast';
+export type AiEnhanceScale = 1 | 2 | 4;
+export type StrengthLevel = 'none' | 'weak' | 'medium' | 'strong';
+
+export interface AiEnhanceOption {
+  enabled: boolean;
+  mode: AiEnhanceMode;
+  scale: AiEnhanceScale;
+  autoSmallCrop: boolean;
+  smallCropThreshold: number; // Max edge pixel threshold (e.g. 800)
+  debounceMs: number; // Debounce delay in ms (e.g. 300)
+  denoiseStrength: StrengthLevel;
+  unsharpStrength: StrengthLevel;
+}
 
 export interface AspectPreset {
   mode: AspectMode;
@@ -22,6 +37,7 @@ export interface CropTaskItem {
   originalHeight: number;  // Original height in pixels
   aspectMode: AspectMode;
   cropRect: CropRect;      // Crop coordinates in native image pixel space
+  aiEnhance?: AiEnhanceOption;
   isCompleted: boolean;
 }
 
@@ -39,11 +55,13 @@ export interface ExportSettingsPayload {
     outputFileName: string;
     cropRect: CropRect;
     resize: ResolutionOption;
+    aiEnhance?: AiEnhanceOption;
   }>;
   destinationPath: string;
   formatOption: FormatOption;
   quality?: number;
   createZip: boolean;
+  globalAiEnhance?: AiEnhanceOption;
 }
 
 export interface ExportProgressEvent {
@@ -56,3 +74,4 @@ export interface ExportProgressEvent {
 }
 
 export type CanvasBackground = 'dark' | 'light' | 'checkerboard';
+

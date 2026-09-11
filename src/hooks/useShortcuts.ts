@@ -74,14 +74,14 @@ export const useShortcuts = () => {
         return;
       }
 
-      // Number keys '0' to '5' for Aspect Mode
+      // Number keys '1' to '5' and '0' for Aspect Mode
       const aspectMap: Record<string, AspectMode> = {
-        '0': 'free',
-        '1': '16:9',
-        '2': '4:3',
+        '1': '3:4',
+        '2': '9:16',
         '3': '1:1',
-        '4': '3:4',
-        '5': '9:16',
+        '4': '4:3',
+        '5': '16:9',
+        '0': 'free',
       };
 
       if (aspectMap[e.key]) {

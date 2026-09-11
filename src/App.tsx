@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { Header } from './components/Header';
@@ -16,12 +16,30 @@ export const App: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
 
+  // Deduplication lock to prevent duplicate file additions from double-triggering events
+  const lastProcessedRef = useRef<{ pathsKey: string; timestamp: number }>({ pathsKey: '', timestamp: 0 });
+
   // Helper to process absolute file paths dropped into Tauri app
   const processFilePaths = useCallback(
     async (paths: string[]) => {
       const validPaths = paths.filter((path) =>
         /\.(png|jpe?g|webp|jfif|bmp)$/i.test(path)
       );
+
+      if (validPaths.length === 0) return;
+
+      const pathsKey = validPaths.join('|');
+      const now = Date.now();
+
+      // Ignore duplicate calls triggered within 500ms
+      if (
+        lastProcessedRef.current.pathsKey === pathsKey &&
+        now - lastProcessedRef.current.timestamp < 500
+      ) {
+        return;
+      }
+
+      lastProcessedRef.current = { pathsKey, timestamp: now };
 
       for (const filePath of validPaths) {
         try {
@@ -109,6 +127,8 @@ export const App: React.FC = () => {
     e.preventDefault();
     setIsDraggingFile(false);
 
+    // Tauri onDragDropEvent already handles file drops natively in desktop environment.
+    // Call processFilePaths only if dataTransfer contains files and native drop didn't process it.
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const paths: string[] = [];
       Array.from(e.dataTransfer.files).forEach((file) => {

@@ -12,7 +12,7 @@ interface ExportModalProps {
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
-  const { tasks, getExportTasksPayload } = useCropStore();
+  const { tasks, getExportTasksPayload, globalAiEnhance } = useCropStore();
 
   // Export settings state
   const [formatOption, setFormatOption] = useState<FormatOption>('keep_original');
@@ -106,6 +106,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           outputFileName: task.outputFileName,
           cropRect: task.cropRect,
           resize: resOption,
+          aiEnhance: globalAiEnhance.enabled ? globalAiEnhance : undefined,
         };
       });
 
@@ -115,6 +116,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         formatOption,
         quality: formatOption === 'jpeg' || formatOption === 'webp_lossy' ? quality : undefined,
         createZip,
+        globalAiEnhance: globalAiEnhance.enabled ? globalAiEnhance : undefined,
       };
 
       await invoke('execute_export', { payload });
