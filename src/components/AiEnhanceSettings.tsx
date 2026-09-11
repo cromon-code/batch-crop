@@ -45,11 +45,10 @@ export const AiEnhanceSettings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => updateGlobalAiEnhance({ mode: 'photo' })}
-                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
-                  globalAiEnhance.mode === 'photo'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
-                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                }`}
+                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${globalAiEnhance.mode === 'photo'
+                  ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                  }`}
               >
                 <Image className="w-4 h-4" />
                 <span className="font-semibold text-[11px]">実写・写真</span>
@@ -58,11 +57,10 @@ export const AiEnhanceSettings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => updateGlobalAiEnhance({ mode: 'anime' })}
-                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
-                  globalAiEnhance.mode === 'anime'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
-                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                }`}
+                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${globalAiEnhance.mode === 'anime'
+                  ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                  }`}
               >
                 <Palette className="w-4 h-4" />
                 <span className="font-semibold text-[11px]">イラスト・CG</span>
@@ -71,11 +69,10 @@ export const AiEnhanceSettings: React.FC = () => {
               <button
                 type="button"
                 onClick={() => updateGlobalAiEnhance({ mode: 'fast' })}
-                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${
-                  globalAiEnhance.mode === 'fast'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
-                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
-                }`}
+                className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center space-y-1 transition ${globalAiEnhance.mode === 'fast'
+                  ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+                  }`}
               >
                 <Zap className="w-4 h-4" />
                 <span className="font-semibold text-[11px]">高速 (Standard)</span>
@@ -94,13 +91,12 @@ export const AiEnhanceSettings: React.FC = () => {
                   key={scale}
                   type="button"
                   onClick={() => updateGlobalAiEnhance({ scale })}
-                  className={`flex-1 py-1.5 rounded-lg font-mono font-bold text-xs border transition ${
-                    globalAiEnhance.scale === scale
-                      ? 'bg-emerald-500 text-zinc-950 border-emerald-400 shadow-md'
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
-                  }`}
+                  className={`flex-1 py-1.5 rounded-lg font-mono font-bold text-xs border transition ${globalAiEnhance.scale === scale
+                    ? 'bg-emerald-500 text-zinc-950 border-emerald-400 shadow-md'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                    }`}
                 >
-                  {scale}x {scale === 1 ? '(等倍補正)' : '超解像'}
+                  {scale}x {scale === 1 ? '(等倍)' : '高解像'}
                 </button>
               ))}
             </div>
@@ -124,19 +120,18 @@ export const AiEnhanceSettings: React.FC = () => {
 
             <div className="grid grid-cols-3 gap-1.5 pt-1">
               {[
-                { label: '300ms (標準)', val: 300 },
-                { label: '500ms (控えめ)', val: 500 },
-                { label: '1000ms (低負荷)', val: 1000 },
+                { label: '300ms', val: 300 },
+                { label: '500ms', val: 500 },
+                { label: '1000ms', val: 1000 },
               ].map((item) => (
                 <button
                   key={item.val}
                   type="button"
                   onClick={() => updateGlobalAiEnhance({ debounceMs: item.val })}
-                  className={`py-1 px-2 rounded-lg font-mono text-[10px] border transition ${
-                    globalAiEnhance.debounceMs === item.val
-                      ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 font-bold'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
-                  }`}
+                  className={`py-1 px-2 rounded-lg font-mono text-[10px] border transition ${globalAiEnhance.debounceMs === item.val
+                    ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 font-bold'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:bg-zinc-800'
+                    }`}
                 >
                   {item.label}
                 </button>

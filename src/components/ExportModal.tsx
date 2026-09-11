@@ -46,10 +46,24 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
       const timestamp = now.toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDhhmmss
       setDestinationPath(`BatchCrop_${timestamp}`);
 
-      // Initialize default resolutions to 'original'
+      // Initialize default target resolutions from the FIRST task of each aspect ratio
       const initialRes: Record<string, ResolutionOption> = {};
       uniqueAspectModes.forEach((mode) => {
-        initialRes[mode] = { type: 'original' };
+        const firstTask = tasks.find((t) => t.aspectMode === mode);
+        if (firstTask) {
+          if (mode === 'free') {
+            const maxPx = Math.max(firstTask.cropRect.width, firstTask.cropRect.height);
+            initialRes[mode] = { type: 'longEdge', maxPixels: maxPx };
+          } else {
+            initialRes[mode] = {
+              type: 'exact',
+              width: firstTask.cropRect.width,
+              height: firstTask.cropRect.height,
+            };
+          }
+        } else {
+          initialRes[mode] = getInitialExactSize(mode);
+        }
       });
       setResolutions(initialRes);
     }
@@ -147,17 +161,25 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     setResolutions((prev) => ({ ...prev, [mode]: option }));
   };
 
-  const getInitialExactSize = (mode: string) => {
-    const p = getPresetByMode(mode);
-    const r = p.ratio || (16 / 9);
-    if (r >= 1) {
-      const w = 1920;
-      const h = Math.round(w / r);
-      return { width: w, height: h };
-    } else {
-      const h = 1920;
-      const w = Math.round(h * r);
-      return { width: w, height: h };
+  const getInitialExactSize = (mode: string): ResolutionOption => {
+    switch (mode) {
+      case '3:4':
+        return { type: 'exact', width: 400, height: 533 };
+      case '9:16':
+        return { type: 'exact', width: 450, height: 800 };
+      case '1:1':
+        return { type: 'exact', width: 400, height: 400 };
+      case '4:3':
+        return { type: 'exact', width: 400, height: 300 };
+      case '16:9':
+        return { type: 'exact', width: 640, height: 360 };
+      default: {
+        const p = getPresetByMode(mode);
+        const r = p.ratio || (4 / 3);
+        const w = 400;
+        const h = Math.round(w / r);
+        return { type: 'exact', width: w, height: h };
+      }
     }
   };
 
@@ -291,104 +313,87 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
               {/* 1. Resolution Settings per Aspect Mode */}
               <div>
-                <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block mb-3">
-                  1. アスペクト比別 出力サイズ設定 (デフォルト: リサイズなし/原寸)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-zinc-300 uppercase tracking-wider block">
+                    1. アスペクト比別 一括出力サイズ設定
+                  </label>
+                  <span className="text-[11px] text-emerald-400 font-mono font-semibold">
+                    (全画像を指定サイズで一括リサイズ)
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 mb-3">
+                  ※ 初期値は各アスペクト比の<span className="text-emerald-300 font-medium">最初のアイテムの切り抜き実寸</span>が自動設定されます。小サイズ切り抜きはAI等で拡大補正されます。
+                </p>
 
                 <div className="space-y-3">
                   {uniqueAspectModes.map((mode) => {
-                    const currentRes = resolutions[mode] || { type: 'original' };
+                    const currentRes = resolutions[mode] || getInitialExactSize(mode);
                     const isFree = mode === 'free';
+                    const taskCount = tasks.filter((t) => t.aspectMode === mode).length;
 
                     return (
                       <div
                         key={mode}
-                        className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2"
+                        className="p-3.5 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-2.5"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold font-mono text-emerald-400 px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">
-                            [{mode}]
-                          </span>
-
-                          <div className="flex items-center space-x-4 text-xs">
-                            <label className="flex items-center space-x-1.5 cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`res-${mode}`}
-                                checked={currentRes.type === 'original'}
-                                onChange={() => updateResolution(mode, { type: 'original' })}
-                                className="accent-emerald-500"
-                              />
-                              <span className="text-zinc-300">原寸で出力 (リサイズなし)</span>
-                            </label>
-
-                            <label className="flex items-center space-x-1.5 cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`res-${mode}`}
-                                checked={currentRes.type !== 'original'}
-                                onChange={() => {
-                                  if (isFree) {
-                                    updateResolution(mode, { type: 'longEdge', maxPixels: 1200 });
-                                  } else {
-                                    const initialSize = getInitialExactSize(mode);
-                                    updateResolution(mode, { type: 'exact', width: initialSize.width, height: initialSize.height });
-                                  }
-                                }}
-                                className="accent-emerald-500"
-                              />
-                              <span className="text-zinc-300">
-                                {isFree ? '長辺上限を指定' : '指定サイズでリサイズ'}
-                              </span>
-                            </label>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-bold font-mono text-emerald-400 px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">
+                              [{mode}]
+                            </span>
+                            <span className="text-xs text-zinc-200 font-medium">
+                              統一出力サイズ:
+                            </span>
                           </div>
+
+                          <span className="text-[10px] text-zinc-400 font-mono">
+                            対象: {taskCount} 件
+                          </span>
                         </div>
 
                         {/* Exact or LongEdge Inputs */}
-                        {currentRes.type === 'exact' && (
-                          <div className="pl-4 flex items-center space-x-2 text-xs text-zinc-400">
-                            <span>幅:</span>
+                        {!isFree && (
+                          <div className="pl-2 flex items-center space-x-2 text-xs text-zinc-300">
+                            <span className="text-zinc-400">幅:</span>
                             <input
                               type="number"
-                              value={currentRes.width}
+                              value={currentRes.type === 'exact' ? currentRes.width : 400}
                               onChange={(e) =>
                                 handleExactWidthChange(mode, parseInt(e.target.value) || 1)
                               }
-                              className="w-20 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                              className="w-24 px-2.5 py-1 rounded bg-zinc-900 border border-zinc-700 text-emerald-300 font-mono text-xs font-bold focus:outline-none focus:border-emerald-500"
                             />
-                            <span>x 高:</span>
+                            <span className="text-zinc-400">× 高:</span>
                             <input
                               type="number"
-                              value={currentRes.height}
+                              value={currentRes.type === 'exact' ? currentRes.height : 300}
                               onChange={(e) =>
                                 handleExactHeightChange(mode, parseInt(e.target.value) || 1)
                               }
-                              className="w-20 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                              className="w-24 px-2.5 py-1 rounded bg-zinc-900 border border-zinc-700 text-emerald-300 font-mono text-xs font-bold focus:outline-none focus:border-emerald-500"
                             />
-                            <span>px</span>
-                            {mode !== 'free' && (
-                              <span className="ml-2 text-[10px] text-emerald-400/80 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                                比率維持 ({mode})
-                              </span>
-                            )}
+                            <span className="text-zinc-400">px</span>
+                            <span className="ml-2 text-[10px] text-emerald-400/80 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              比率維持 ({mode})
+                            </span>
                           </div>
                         )}
 
-                        {currentRes.type === 'longEdge' && (
-                          <div className="pl-4 flex items-center space-x-2 text-xs text-zinc-400">
-                            <span>長辺の最大ピクセル数:</span>
+                        {isFree && (
+                          <div className="pl-2 flex items-center space-x-2 text-xs text-zinc-300">
+                            <span className="text-zinc-400">長辺の最大ピクセル数:</span>
                             <input
                               type="number"
-                              value={currentRes.maxPixels}
+                              value={currentRes.type === 'longEdge' ? currentRes.maxPixels : 1200}
                               onChange={(e) =>
                                 updateResolution(mode, {
                                   type: 'longEdge',
                                   maxPixels: parseInt(e.target.value) || 100,
                                 })
                               }
-                              className="w-24 px-2 py-1 rounded bg-zinc-900 border border-zinc-700 text-zinc-100 font-mono text-xs"
+                              className="w-28 px-2.5 py-1 rounded bg-zinc-900 border border-zinc-700 text-emerald-300 font-mono text-xs font-bold focus:outline-none focus:border-emerald-500"
                             />
-                            <span>px (比率維持縮小)</span>
+                            <span className="text-zinc-400">px (アスペクト比維持縮小)</span>
                           </div>
                         )}
                       </div>

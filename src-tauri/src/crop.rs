@@ -128,49 +128,77 @@ pub fn get_image_info(source_path: &str) -> Result<ImageInfoResponse, String> {
     })
 }
 
-/// Safely crops and resizes a DynamicImage with boundary clamping
-pub fn execute_crop_and_resize(
+/// Safely crops, resizes, and conditionally applies AI Super-Resolution & Sharpening
+pub fn process_task_image(
     img: &DynamicImage,
     crop_rect: &CropRect,
     resize: &ResizeOption,
+    ai_option: Option<&AiEnhanceOption>,
 ) -> DynamicImage {
     let (img_w, img_h) = img.dimensions();
 
     // 0. Boundary Clamping: Ensure x, y, width, height are strictly inside image boundaries
     let x = crop_rect.x.min(img_w);
     let y = crop_rect.y.min(img_h);
-    let w = crop_rect.width.min(img_w.saturating_sub(x));
-    let h = crop_rect.height.min(img_h.saturating_sub(y));
-
-    // Prevent 0-sized crop panic
-    let w = w.max(1);
-    let h = h.max(1);
+    let w = crop_rect.width.min(img_w.saturating_sub(x)).max(1);
+    let h = crop_rect.height.min(img_h.saturating_sub(y)).max(1);
 
     // 1. Native Lossless Crop
     let cropped = img.crop_imm(x, y, w, h);
+    let (cw, ch) = cropped.dimensions();
 
-    // 2. Resize Logic
-    match resize {
-        ResizeOption::Original => cropped,
+    let ai_enabled = ai_option.map_or(false, |opt| opt.enabled);
+
+    // 2. Perform Resizing according to specified target output dimension
+    let (resized, is_upscaled) = match resize {
+        ResizeOption::Original => (cropped, false),
         ResizeOption::Exact { width, height } => {
-            cropped.resize_exact(*width, *height, FilterType::Lanczos3)
+            let tw = (*width).max(1);
+            let th = (*height).max(1);
+            let upscaled = cw < tw || ch < th;
+            (cropped.resize_exact(tw, th, FilterType::Lanczos3), upscaled)
         }
         ResizeOption::LongEdge { max_pixels } => {
-            let (cw, ch) = cropped.dimensions();
-            if cw <= *max_pixels && ch <= *max_pixels {
-                cropped // Already smaller than max, avoid upscaling degradation
+            let limit = *max_pixels;
+            if cw <= limit && ch <= limit {
+                (cropped, false)
             } else {
                 let ratio = if cw >= ch {
-                    *max_pixels as f32 / cw as f32
+                    limit as f32 / cw as f32
                 } else {
-                    *max_pixels as f32 / ch as f32
+                    limit as f32 / ch as f32
                 };
                 let tw = ((cw as f32 * ratio).round() as u32).max(1);
                 let th = ((ch as f32 * ratio).round() as u32).max(1);
-                cropped.resize_exact(tw, th, FilterType::Lanczos3)
+                (cropped.resize_exact(tw, th, FilterType::Lanczos3), false)
             }
         }
+    };
+
+    // 3. Conditional AI Super Resolution & Reconstruction Filter
+    if ai_enabled {
+        if let Some(opt) = ai_option {
+            if is_upscaled || opt.auto_small_crop || opt.enabled {
+                apply_ai_enhancement(&resized, opt)
+            } else {
+                resized
+            }
+        } else {
+            resized
+        }
+    } else {
+        // AI OFF -> Strictly NO AI enhancement / NO sharpening filters!
+        resized
     }
+}
+
+#[allow(dead_code)]
+pub fn execute_crop_and_resize(
+    img: &DynamicImage,
+    crop_rect: &CropRect,
+    resize: &ResizeOption,
+) -> DynamicImage {
+    process_task_image(img, crop_rect, resize, None)
 }
 
 /// Applies AI Super-Resolution / Image Reconstruction & Sharpening
@@ -179,10 +207,95 @@ pub fn apply_ai_enhancement(img: &DynamicImage, option: &AiEnhanceOption) -> Dyn
         return img.clone();
     }
 
+    // Try ONNX AI Super-Resolution inference
+    if let Ok(enhanced) = run_onnx_super_resolution(img, option) {
+        return enhanced;
+    }
+
+    // Fallback: Advanced Lanczos3 + Unsharp Mask filtering
+    fallback_ai_enhancement(img, option)
+}
+
+static ANIME6B_MODEL_BYTES: &[u8] = include_bytes!("../models/realesrgan-anime6B.onnx");
+
+fn run_onnx_super_resolution(img: &DynamicImage, _option: &AiEnhanceOption) -> Result<DynamicImage, String> {
+    use tract_onnx::prelude::*;
+
+    let (width, height) = img.dimensions();
+    let rgb_img = img.to_rgb8();
+
+    // Prepare NCHW float32 tensor [1, 3, H, W] normalized 0.0..1.0
+    let mut image_data = Vec::with_capacity((3 * width * height) as usize);
+
+    // R plane
+    for y in 0..height {
+        for x in 0..width {
+            image_data.push(rgb_img.get_pixel(x, y)[0] as f32 / 255.0);
+        }
+    }
+    // G plane
+    for y in 0..height {
+        for x in 0..width {
+            image_data.push(rgb_img.get_pixel(x, y)[1] as f32 / 255.0);
+        }
+    }
+    // B plane
+    for y in 0..height {
+        for x in 0..width {
+            image_data.push(rgb_img.get_pixel(x, y)[2] as f32 / 255.0);
+        }
+    }
+
+    let input_tensor = Tensor::from_shape(
+        &[1, 3, height as usize, width as usize],
+        &image_data,
+    ).map_err(|e| format!("Tensor error: {}", e))?;
+
+    let mut model_cursor = std::io::Cursor::new(ANIME6B_MODEL_BYTES);
+    let model = tract_onnx::onnx()
+        .model_for_read(&mut model_cursor)
+        .map_err(|e| format!("Model load error: {}", e))?
+        .into_optimized()
+        .map_err(|e| format!("Model optimize error: {}", e))?
+        .into_runnable()
+        .map_err(|e| format!("Model run build error: {}", e))?;
+
+    let outputs = model.run(tvec!(input_tensor.into()))
+        .map_err(|e| format!("Inference error: {}", e))?;
+
+    let output = outputs[0].to_plain_array_view::<f32>()
+        .map_err(|e| format!("Output view error: {}", e))?;
+
+    let out_shape = output.shape();
+    if out_shape.len() < 4 {
+        return Err("Invalid tensor shape".to_string());
+    }
+    let out_h = out_shape[2];
+    let out_w = out_shape[3];
+
+    let mut out_img = image::RgbImage::new(out_w as u32, out_h as u32);
+
+    for y in 0..out_h {
+        for x in 0..out_w {
+            let r_val = output[[0, 0, y, x]];
+            let g_val = output[[0, 1, y, x]];
+            let b_val = output[[0, 2, y, x]];
+
+            let r = (r_val.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let g = (g_val.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let b = (b_val.clamp(0.0, 1.0) * 255.0).round() as u8;
+
+            out_img.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
+        }
+    }
+
+    Ok(DynamicImage::ImageRgb8(out_img))
+}
+
+fn fallback_ai_enhancement(img: &DynamicImage, option: &AiEnhanceOption) -> DynamicImage {
     let (w, h) = img.dimensions();
     let max_edge = w.max(h);
 
-    // Determine upscale scale factor (auto_small_crop boosts small crops under threshold)
     let scale_factor = if option.auto_small_crop && max_edge < option.small_crop_threshold {
         option.scale.max(2)
     } else {
@@ -197,20 +310,16 @@ pub fn apply_ai_enhancement(img: &DynamicImage, option: &AiEnhanceOption) -> Dyn
         img.clone()
     };
 
-    // Mode-specific enhancement filter (Photo vs Anime vs Fast)
     match option.mode.as_str() {
         "anime" => {
-            // Anime/Illustration mode: High contrast edge sharpening
             let unsharpened = image::imageops::unsharpen(&scaled_img, 3.0, 1);
             DynamicImage::ImageRgba8(unsharpened).adjust_contrast(10.0)
         }
         "photo" => {
-            // Photo mode: Texture & micro-contrast preservation unsharp mask
             let unsharpened = image::imageops::unsharpen(&scaled_img, 2.2, 2);
             DynamicImage::ImageRgba8(unsharpened).adjust_contrast(4.0)
         }
         _ => {
-            // Fast / Standard mode: Medium unsharp mask
             let unsharpened = image::imageops::unsharpen(&scaled_img, 1.8, 3);
             DynamicImage::ImageRgba8(unsharpened)
         }
@@ -306,16 +415,9 @@ pub fn process_batch_export(
                 .decode()
                 .map_err(|e| format!("画像の解読・デコードに失敗しました ({}) : {}", task.source_path, e))?;
 
-            // Crop & Resize
-            let cropped_and_resized = execute_crop_and_resize(&img, &task.crop_rect, &task.resize);
-
-            // Apply AI Enhancement / Super-Resolution if enabled
+            // Crop, Resize, and conditionally apply AI Super-Resolution / Sharpening
             let ai_option = task.ai_enhance.as_ref().or(payload_arc.global_ai_enhance.as_ref());
-            let processed_img = if let Some(option) = ai_option {
-                apply_ai_enhancement(&cropped_and_resized, option)
-            } else {
-                cropped_and_resized
-            };
+            let processed_img = process_task_image(&img, &task.crop_rect, &task.resize, ai_option);
 
             // Determine output path & encoding format
             let out_file_name = &task.output_file_name;
@@ -392,18 +494,25 @@ fn save_image_with_format(
 ) -> Result<(), String> {
     match format_option {
         FormatOption::KeepOriginal => {
-            let format = ImageFormat::from_path(out_path).unwrap_or(ImageFormat::Png);
-            img.save_with_format(out_path, format)
-                .map_err(|e| format!("保存に失敗しました ({}): {}", out_path.display(), e))
+            let ext = out_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext == "webp" {
+                save_webp_image(img, out_path, false, quality)
+            } else {
+                let format = ImageFormat::from_path(out_path).unwrap_or(ImageFormat::Png);
+                img.save_with_format(out_path, format)
+                    .map_err(|e| format!("保存に失敗しました ({}): {}", out_path.display(), e))
+            }
         }
         FormatOption::Png => {
             img.save_with_format(out_path, ImageFormat::Png)
                 .map_err(|e| format!("PNG保存に失敗しました: {}", e))
         }
-        FormatOption::WebpLossless | FormatOption::WebpLossy => {
-            img.save_with_format(out_path, ImageFormat::WebP)
-                .map_err(|e| format!("WebP保存に失敗しました: {}", e))
-        }
+        FormatOption::WebpLossless => save_webp_image(img, out_path, true, quality),
+        FormatOption::WebpLossy => save_webp_image(img, out_path, false, quality),
         FormatOption::Jpeg => {
             let mut file = BufWriter::new(
                 File::create(out_path).map_err(|e| format!("ファイル作成に失敗しました: {}", e))?,
@@ -414,6 +523,24 @@ fn save_image_with_format(
                 .map_err(|e| format!("JPEGエンコードに失敗しました: {}", e))
         }
     }
+}
+
+fn save_webp_image(
+    img: &DynamicImage,
+    out_path: &Path,
+    lossless: bool,
+    quality: u8,
+) -> Result<(), String> {
+    let rgba = img.to_rgba8();
+    let encoder = webp::Encoder::from_rgba(&rgba, img.width(), img.height());
+    let webp_memory = if lossless {
+        encoder.encode_lossless()
+    } else {
+        let q = (quality as f32).clamp(1.0, 100.0);
+        encoder.encode(q)
+    };
+    fs::write(out_path, &*webp_memory)
+        .map_err(|e| format!("WebP保存に失敗しました ({}): {}", out_path.display(), e))
 }
 
 fn create_zip_archive(src_dir: &Path, zip_path: &Path) -> Result<(), String> {
@@ -499,8 +626,27 @@ mod tests {
         };
 
         let enhanced = apply_ai_enhancement(&img, &option);
-        // Small crop under 800px should be upscaled by 2x to 200x200
-        assert_eq!(enhanced.width(), 200);
-        assert_eq!(enhanced.height(), 200);
+        // RealESRGAN anime6B ONNX model performs 4x super-resolution upscaling (100x100 -> 400x400)
+        assert_eq!(enhanced.width(), 400);
+        assert_eq!(enhanced.height(), 400);
+    }
+
+    #[test]
+    fn test_webp_lossy_and_lossless_save() {
+        let temp_dir = std::env::temp_dir().join("batchcrop_test_webp");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let img = DynamicImage::ImageRgba8(image::RgbaImage::new(100, 100));
+        let lossy_path = temp_dir.join("test_lossy.webp");
+        let lossless_path = temp_dir.join("test_lossless.webp");
+
+        save_image_with_format(&img, &lossy_path, &FormatOption::WebpLossy, 80).unwrap();
+        save_image_with_format(&img, &lossless_path, &FormatOption::WebpLossless, 80).unwrap();
+
+        assert!(lossy_path.exists());
+        assert!(lossless_path.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

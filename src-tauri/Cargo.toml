@@ -1,6 +1,6 @@
 [package]
 name = "batch-crop"
-version = "1.0.0"
+version = "1.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -23,7 +23,9 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 image = "0.25"
+webp = "0.3"
 rayon = "1.10"
+tract-onnx = "0.23"
 zip = "2.2"
 dirs = "5.0"
 tokio = { version = "1", features = ["sync"] }

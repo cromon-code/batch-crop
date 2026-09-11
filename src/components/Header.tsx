@@ -43,14 +43,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal }) => {
           </div>
           <div>
             <h1 className="text-sm font-bold text-zinc-100 leading-none">BatchCrop</h1>
-            <p className="text-[10px] text-zinc-400 font-mono mt-0.5">v5.1 Batch Cropping tool</p>
+            <p className="text-[10px] text-zinc-400 font-mono mt-0.5">v1.1.0 Batch Cropping tool</p>
           </div>
         </div>
       </div>
 
       {/* Aspect Ratio Preset Switcher (Dropdown for narrow screens, Button bar for wide screens) */}
       {/* 1. Narrow Screen Dropdown */}
-      <div className="flex xl:hidden items-center bg-zinc-950 px-2.5 py-1 rounded-xl border border-zinc-800">
+      <div className="flex lg:hidden items-center bg-zinc-950 px-2.5 py-1 rounded-xl border border-zinc-800">
         <select
           value={activeAspectMode}
           onChange={(e) => setAspectMode(e.target.value as AspectMode)}
@@ -65,14 +65,14 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal }) => {
       </div>
 
       {/* 2. Wide Screen Horizontal Button List */}
-      <div className="hidden xl:flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 space-x-1">
+      <div className="hidden lg:flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 space-x-1">
         {ASPECT_PRESETS.map((preset) => {
           const isActive = activeAspectMode === preset.mode;
           return (
             <button
               key={preset.mode}
               onClick={() => setAspectMode(preset.mode as AspectMode)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center space-x-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition flex items-center space-x-1.5 ${
                 isActive
                   ? 'bg-emerald-500 text-zinc-950 font-semibold shadow-sm'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'

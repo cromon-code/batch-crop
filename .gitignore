@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+models/*
+src-tauri/models/*.onnx
+src-tauri/models/*.bin
 *.local
 
 # Editor directories and files

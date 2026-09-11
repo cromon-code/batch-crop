@@ -293,6 +293,12 @@ export const CropCanvas: React.FC = () => {
     };
   };
 
+  // Throttling RAF ref for smooth 60fps drag
+  const rafRef = useRef<number | null>(null);
+  const pendingRectRef = useRef<CropRect | null>(null);
+
+  const isInteracting = isDraggingPan || isResizing !== null;
+
   // Mouse Move handler for Pan and Frame Resizing (Fixed Ratio / Free Mode)
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
@@ -303,29 +309,22 @@ export const CropCanvas: React.FC = () => {
 
       const startCrop = dragStartRef.current.startCrop;
 
+      let nextX = startCrop.x;
+      let nextY = startCrop.y;
+      let nextW = startCrop.width;
+      let nextH = startCrop.height;
+
       if (isDraggingPan) {
         // Dragging inside frame pans the image behind the frame
-        let newX = startCrop.x - deltaX;
-        let newY = startCrop.y - deltaY;
+        nextX = startCrop.x - deltaX;
+        nextY = startCrop.y - deltaY;
 
         // Contain & Clamp: CropRect must stay strictly inside image [0, 0, origW, origH]
-        newX = Math.max(0, Math.min(origW - startCrop.width, newX));
-        newY = Math.max(0, Math.min(origH - startCrop.height, newY));
-
-        updateCurrentCropRect({
-          x: Math.round(newX),
-          y: Math.round(newY),
-          width: startCrop.width,
-          height: startCrop.height,
-        });
+        nextX = Math.max(0, Math.min(origW - startCrop.width, nextX));
+        nextY = Math.max(0, Math.min(origH - startCrop.height, nextY));
       } else if (isResizing) {
         const isFixedRatio = activeAspectMode !== 'free' && !!preset.ratio;
         const ratio = preset.ratio || startCrop.width / startCrop.height;
-
-        let x = startCrop.x;
-        let y = startCrop.y;
-        let w = startCrop.width;
-        let h = startCrop.height;
 
         if (isFixedRatio) {
           // Locked Ratio Resizing (1:1, 16:9, 4:3, 3:4, 9:16)
@@ -337,8 +336,8 @@ export const CropCanvas: React.FC = () => {
             let newW = Math.max(30, Math.min(limitW, startCrop.width + deltaX));
             let newH = newW / ratio;
 
-            w = newW;
-            h = newH;
+            nextW = newW;
+            nextH = newH;
           } else if (isResizing === 'sw') {
             const maxW = startCrop.x + startCrop.width;
             const maxH = origH - startCrop.y;
@@ -347,9 +346,9 @@ export const CropCanvas: React.FC = () => {
             let newW = Math.max(30, Math.min(limitW, startCrop.width - deltaX));
             let newH = newW / ratio;
 
-            x = startCrop.x + startCrop.width - newW;
-            w = newW;
-            h = newH;
+            nextX = startCrop.x + startCrop.width - newW;
+            nextW = newW;
+            nextH = newH;
           } else if (isResizing === 'ne') {
             const maxW = origW - startCrop.x;
             const maxH = startCrop.y + startCrop.height;
@@ -358,9 +357,9 @@ export const CropCanvas: React.FC = () => {
             let newW = Math.max(30, Math.min(limitW, startCrop.width + deltaX));
             let newH = newW / ratio;
 
-            y = startCrop.y + startCrop.height - newH;
-            w = newW;
-            h = newH;
+            nextY = startCrop.y + startCrop.height - newH;
+            nextW = newW;
+            nextH = newH;
           } else if (isResizing === 'nw') {
             const maxW = startCrop.x + startCrop.width;
             const maxH = startCrop.y + startCrop.height;
@@ -369,36 +368,47 @@ export const CropCanvas: React.FC = () => {
             let newW = Math.max(30, Math.min(limitW, startCrop.width - deltaX));
             let newH = newW / ratio;
 
-            x = startCrop.x + startCrop.width - newW;
-            y = startCrop.y + startCrop.height - newH;
-            w = newW;
-            h = newH;
+            nextX = startCrop.x + startCrop.width - newW;
+            nextY = startCrop.y + startCrop.height - newH;
+            nextW = newW;
+            nextH = newH;
           }
         } else {
           // Free Mode Resizing (independent handle movement)
           if (isResizing.includes('e')) {
-            w = Math.max(30, Math.min(origW - startCrop.x, startCrop.width + deltaX));
+            nextW = Math.max(30, Math.min(origW - startCrop.x, startCrop.width + deltaX));
           }
           if (isResizing.includes('s')) {
-            h = Math.max(30, Math.min(origH - startCrop.y, startCrop.height + deltaY));
+            nextH = Math.max(30, Math.min(origH - startCrop.y, startCrop.height + deltaY));
           }
           if (isResizing.includes('w')) {
             const clampedDeltaX = Math.max(-startCrop.x, Math.min(startCrop.width - 30, deltaX));
-            x = startCrop.x + clampedDeltaX;
-            w = startCrop.width - clampedDeltaX;
+            nextX = startCrop.x + clampedDeltaX;
+            nextW = startCrop.width - clampedDeltaX;
           }
           if (isResizing.includes('n')) {
             const clampedDeltaY = Math.max(-startCrop.y, Math.min(startCrop.height - 30, deltaY));
-            y = startCrop.y + clampedDeltaY;
-            h = startCrop.height - clampedDeltaY;
+            nextY = startCrop.y + clampedDeltaY;
+            nextH = startCrop.height - clampedDeltaY;
           }
         }
+      }
 
-        updateCurrentCropRect({
-          x: Math.round(x),
-          y: Math.round(y),
-          width: Math.round(w),
-          height: Math.round(h),
+      const newRect = {
+        x: Math.round(nextX),
+        y: Math.round(nextY),
+        width: Math.round(nextW),
+        height: Math.round(nextH),
+      };
+
+      pendingRectRef.current = newRect;
+
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          if (pendingRectRef.current) {
+            updateCurrentCropRect(pendingRectRef.current);
+          }
         });
       }
     },
@@ -406,10 +416,18 @@ export const CropCanvas: React.FC = () => {
   );
 
   const handleMouseUp = useCallback(() => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (pendingRectRef.current) {
+      updateCurrentCropRect(pendingRectRef.current);
+      pendingRectRef.current = null;
+    }
     setIsDraggingPan(false);
     setIsResizing(null);
     startDebounceTimer();
-  }, [startDebounceTimer]);
+  }, [startDebounceTimer, updateCurrentCropRect]);
 
   useEffect(() => {
     if (isDraggingPan || isResizing) {
@@ -440,7 +458,7 @@ export const CropCanvas: React.FC = () => {
     checkerboard: 'bg-checkerboard',
   }[canvasBg];
 
-  const isEnhancedActive = globalAiEnhance.enabled && (aiState === 'enhanced' || aiState === 'idle');
+  const isEnhancedActive = globalAiEnhance.enabled && !isInteracting && (aiState === 'enhanced' || aiState === 'idle');
   const getAiFilterStyle = () => {
     if (!isEnhancedActive) return 'none';
     switch (globalAiEnhance.mode) {
@@ -478,7 +496,9 @@ export const CropCanvas: React.FC = () => {
       <img
         src={imgSrc}
         alt={currentTask.fileName}
-        className="absolute pointer-events-none select-none max-w-none max-h-none object-fill transition-all duration-150"
+        className={`absolute pointer-events-none select-none max-w-none max-h-none object-fill ${
+          isInteracting ? 'transition-none' : 'transition-all duration-150'
+        }`}
         style={{
           width: `${imageDisplayWidth}px`,
           height: `${imageDisplayHeight}px`,
